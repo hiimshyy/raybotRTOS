@@ -72,7 +72,7 @@ void MainProcess::processingDeviceTask(void* pvParameters) {
     MainProcess* self = static_cast<MainProcess*>(pvParameters);
     
     for (;;) {
-        self->processingDevice(10); 
+        self->processingDevice(5); 
         vTaskDelay(pdMS_TO_TICKS(100));  
     }
 }
@@ -102,7 +102,6 @@ void MainProcess::init() {
     analogReadResolution(12);
 	Serial.begin(115200);
 	Serial2.begin(115200);
-    Info.Stage = 0;
 	Serial.println("[MainProcess] - Init");
 
 	const int inputPins[] = {};
@@ -121,7 +120,6 @@ void MainProcess::handleMessage() {
     } else if (isCommingMsg.startsWith("DATA:")) {
         handleData(isCommingMsg);
     }
-
 }
 
 void MainProcess::handleCommand(String& command) {
@@ -130,7 +128,6 @@ void MainProcess::handleCommand(String& command) {
     if(cmd == "forward") {
         Serial.println("[handelCommand] - go_forward");
 		liftBox();
-		
         // Set motor to go forward
         if (Info.Motor1_mode == 0) {
             Info.Motor1_mode = 1;
@@ -139,7 +136,7 @@ void MainProcess::handleCommand(String& command) {
         else if (Info.Motor1_mode != 1) {
             while (true) {
                 if (Info.PWM_MT_1 > 10) {
-                    Info.PWM_MT_1 -= 10;
+                    Info.PWM_MT_1 -= 5;
                     analogWrite(_pwm_motor_1, Info.PWM_MT_1);
 					vTaskDelay(pdMS_TO_TICKS(10));
                 } 
@@ -180,7 +177,7 @@ void MainProcess::handleCommand(String& command) {
 			// giảm tốc độ động cơ
 			while (true){
 				if (Info.PWM_MT_1 > 10){
-					Info.PWM_MT_1 -= 10;
+					Info.PWM_MT_1 -= 5;
 					analogWrite(_pwm_motor_1, Info.PWM_MT_1);
 					vTaskDelay(pdMS_TO_TICKS(10));;
 				} else{
@@ -196,7 +193,7 @@ void MainProcess::handleCommand(String& command) {
 			// giảm tốc độ động cơ
 			while (true){
 				if (Info.PWM_MT_2 > 10){
-					Info.PWM_MT_2 -= 8;
+					Info.PWM_MT_2 -= 5;
 					analogWrite(_pwm_motor_2, Info.PWM_MT_2);
 					vTaskDelay(pdMS_TO_TICKS(10));;
 				} else{
@@ -278,6 +275,7 @@ void MainProcess::handleCommand(String& command) {
 }
 
 void MainProcess::handleData(String& data) {
+
 
 }
 
@@ -462,16 +460,10 @@ void MainProcess::readDistance() {
         totalBW += analogRead(_backward_distance_sensor);
         totalUD += analogRead(_up_down_distance_sensor);
 
-        // Check if we have collected enough samples
         if (readDistanceCounter == samples) {
-            // Calculate average
             Info.distanceFW = totalFW / samples;
             Info.distanceBW = totalBW / samples;
             Info.distanceUD = totalUD / samples;
-            // Debug print
-            // Serial.println("[Read distance] - Forward distance: " + String(Info.distanceFW));
-            // Serial.println("[Read distance] - Backward distance: " + String(Info.distanceBW));
-            // Serial.println("[Read distance] - UpDown  distance: " + String(Info.distanceUD));
 
             // Prepare JSON
             JsonDocument doc;
@@ -482,8 +474,8 @@ void MainProcess::readDistance() {
             // Serialize to string
             String buffer;
             serializeJson(doc, buffer);
-           String message = "DATA:" + buffer;
-		   Serial.println(message);
+			String message = "DATA:" + buffer;
+			Serial.println(message);
 
             // Send to queue with timeout
             if (sendMessageQueue != nullptr) {
@@ -518,12 +510,13 @@ void MainProcess::handleGetData(){
 	jsonDoc["safety"] = Info.safety;
 	jsonDoc["door_state"] = Info.door_state;
 
-	char buffer[500];
+	String buffer;
     serializeJson(jsonDoc, buffer);
-	String message = "DATA:" + String(buffer);
-    char* messagePtr = new char[message.length() + 1];
-    strcpy(messagePtr, message.c_str());
-	xQueueSend(sendMessageQueue, &messagePtr, 0);
+	String message = "DATA:" + buffer;
+	Serial.println(message);
+	if (sendMessageQueue != nullptr) {
+		xQueueSend(sendMessageQueue, &message, pdMS_TO_TICKS(100));
+	}
 }
 void MainProcess::liftBox(){
     if (updownDistance < 2050) {

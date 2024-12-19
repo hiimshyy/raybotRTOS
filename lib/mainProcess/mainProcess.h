@@ -16,8 +16,6 @@
 
 /// @brief struct info of robot
 struct Robot_info {
-	String Name = "robot_transporter";
-	int Stage = 0;
 	int Motor1_mode = 0;
 	int Motor2_mode = 0;
 	int PWM_MT_1;
@@ -55,9 +53,9 @@ class MainProcess {
         void handleData(String& data);
         void handleGetData();
         void readDistance();
-
         
         QueueHandle_t sendMessageQueue;
+        QueueHandle_t reciveMessageQueue;
         QueueHandle_t serialQueue;
         
         TaskHandle_t serialTaskHandle = NULL;
