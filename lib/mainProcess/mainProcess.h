@@ -43,6 +43,7 @@ class MainProcess {
         static void readDistanceTask(void* pvParameters);
         bool stringComplete = false;
         String isCommingMsg;
+        int target;
 
     private:
         void init();
@@ -53,6 +54,7 @@ class MainProcess {
         void handleData(String& data);
         void handleGetData();
         void readDistance();
+        float detectTarget(float maxSpeed, float distance);
         
         QueueHandle_t sendMessageQueue;
         QueueHandle_t reciveMessageQueue;
