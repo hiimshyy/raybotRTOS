@@ -1,9 +1,6 @@
 {
 	"folders": [
 		{
-			"path": "D:/TBE/robot"
-		},
-		{
 			"name": "robotRTOS",
 			"path": "../.."
 		}
@@ -49,7 +46,8 @@
 			"streambuf": "cpp",
 			"cinttypes": "cpp",
 			"typeinfo": "cpp",
-			"variant": "cpp"
+			"variant": "cpp",
+			"readme": "cpp"
 		}
 	}
 }

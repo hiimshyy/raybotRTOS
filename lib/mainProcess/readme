@@ -1,0 +1,56 @@
+
+#define SAMPLES 25
+#define ir A0
+#define modelSensor 1080
+
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+}
+
+void loop() {
+  float ir_val[SAMPLES] = {};
+	int distanceCM;
+	int median;
+
+	for (int i=0; i<SAMPLES; i++){
+		ir_val[i] = analogRead(ir);
+	}
+
+	sort(ir_val, SAMPLES);
+	median = ir_val[SAMPLES/2];
+	Serial.println("Median: " + String(median));
+
+	if (modelSensor == 1080) 
+		if (median > 1000) distanceCM = 0;
+		else if (median < 1000 && median > 150)
+			distanceCM = 29.988 * pow(map(median, 0, 1023, 0, 5000)/1000.0, -1.173);
+		else 
+			distanceCM = 80;
+	else if (modelSensor == 20150)
+		if (median > 1000 ) distanceCM = 0; 
+		else if (median < 1000 && median > 150)
+			distanceCM = 60.374 * pow(map(median, 0, 1023, 0, 5000)/1000.0, -1.16);
+		else 
+			distanceCM = 150;
+	else 
+		distanceCM = 0; 
+  Serial.println("Distance: " + String(distanceCM));
+  delay(100);
+}
+
+void sort(float a[], int size) {
+	for(int i = 0; i < size-1; i++) {
+		bool swapped = false;
+		for(int j = 0; j < size-i-1; j++) {
+			if(a[j] > a[j+1]) {
+				float temp = a[j];
+				a[j] = a[j+1];
+				a[j+1] = temp;
+				swapped = true;
+			}
+		}
+		if (!swapped) break;
+	}
+}
