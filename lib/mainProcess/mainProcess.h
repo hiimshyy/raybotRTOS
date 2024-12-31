@@ -6,10 +6,12 @@
 #include <FreeRTOS.h>
 #include <queue.h>
 
-#define motor1Revesal 	22 	
-#define motor1PWM  		2 	
-#define motor2Revesal 	24  
-#define motor2PWM  		3  
+#define motor11Revesal 	22 	
+#define motor11PWM  	2 	
+#define motor12Revesal 	24  
+#define motor12PWM  	3  
+#define motor2Revesal 	26
+#define motor2PWM  		4
 #define forwardSensor 	A0		
 #define backwardSensor	A1	
 #define updownSensor 	A2
@@ -49,12 +51,12 @@ class MainProcess {
         static void serialEventTask(void* pvParameters);
         static void readDistanceTask(void* pvParameters);
         String isCommingMsg;
-        float target, maxSpeed;
+        float target;
 
     private:
         void init();
         void serialEvent(void);
-        void processingDevice(int weights);
+        void processingDevice(int weight = 5, int maxSpeed = 150);
         void sort(float a[], int size);
         int distance(int8_t sensorName, int16_t modelSensor);
         
@@ -75,6 +77,8 @@ class MainProcess {
         TaskHandle_t readDistanceTaskHandle = NULL;
 
         uint8_t motor1Stage = 0, motor2Stage = 0;
+        int weight = 5, maxSpeed = 150;
+        int maxDistanceFw = 60, minDistanceFw = 30;
 
 };
 

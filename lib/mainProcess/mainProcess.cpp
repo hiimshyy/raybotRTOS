@@ -73,7 +73,7 @@ void MainProcess::processingDeviceTask(void* pvParameters) {
     MainProcess* self = static_cast<MainProcess*>(pvParameters);
     
     for (;;) {
-        self->processingDevice(5); 
+		self->processingDevice(self->weight, self->maxSpeed); 
         vTaskDelay(pdMS_TO_TICKS(300));  
     }
 }
@@ -107,7 +107,7 @@ void MainProcess::init() {
 	Serial.println("[MainProcess] - Init");
 
 	const int inputPins[] = {forwardSensor, backwardSensor, updownSensor};
-    const int outputPins[] = {motor1Revesal, motor2Revesal, motor1PWM, motor2PWM};
+    const int outputPins[] = {motor11Revesal, motor12Revesal, motor2Revesal, motor11PWM, motor12PWM, motor2PWM};
 
     for (int pin : inputPins) pinMode(pin, INPUT);
     for (int pin : outputPins) {
@@ -119,7 +119,6 @@ void MainProcess::init() {
 void MainProcess::handleMessage() {
     if (isCommingMsg.startsWith("CMD:")) {
         handleCommand(isCommingMsg);
-		// Info.taskActive = false;
     } else if (isCommingMsg.startsWith("DATA:")) {
         handleData(isCommingMsg);
     }
@@ -128,13 +127,15 @@ void MainProcess::handleMessage() {
 void MainProcess::handleCommand(String& command) {
 	String direction, speed;
     String cmd = command.substring(4);
+	// CMD:forward, CMD:backward, CMD:stop, CMD:lift_box, CMD:drop_box, CMD:clr
     if(cmd == "forward") {
         // Serial.println("[handleCommand] - go_forward");
         if (Info.Motor1_mode != 1) {
             while (true) {
                 if (Info.PWM_MT_1 > 10) {
                     Info.PWM_MT_1 -= 5;
-                    analogWrite(motor1PWM, Info.PWM_MT_1);
+                    analogWrite(motor11PWM, Info.PWM_MT_1);
+					analogWrite(motor12PWM, Info.PWM_MT_1);
 					vTaskDelay(pdMS_TO_TICKS(10));
                 } 
 				else {
@@ -151,7 +152,8 @@ void MainProcess::handleCommand(String& command) {
 			while (true) {
 				if (Info.PWM_MT_1 > 10) {
 					Info.PWM_MT_1 -= 5; 
-                    analogWrite(motor1PWM, Info.PWM_MT_1);
+                    analogWrite(motor11PWM, Info.PWM_MT_1);
+					analogWrite(motor12PWM, Info.PWM_MT_1);
 					vTaskDelay(pdMS_TO_TICKS(10));
 				} 
 				else { 
@@ -221,17 +223,51 @@ void MainProcess::handleCommand(String& command) {
 }
 
 void MainProcess::handleData(String& data) {
+	String dataStr = data.substring(5);
+	// Serial.println("[handleCommand] - handleData");
+	// DATA:{"weight":10,"movement_pwm":255}
+	JsonDocument doc;
+	DeserializationError error = deserializeJson(doc, dataStr);
 
+	// Test if parsing succeeds.
+	if (error) {
+		Serial.print(F("deserializeJson() failed: "));
+		Serial.println(error.f_str());
+		return;
+	}
+
+	if(doc["max_pwm_movement"] != NULL) {
+		maxSpeed = doc["max_pwm_movement"];
+	}
+	if (doc["parameter_motor"] != NULL) {
+		weight = doc["parameter_motor"];
+	}
+	if (doc["max_distance_move"] != NULL) {
+		maxDistanceFw = doc["max_distance_move"];
+
+	}
+	if (doc["min_distance_move"] != NULL) {
+		minDistanceFw = doc["min_distance_move"];
+	}
+
+	// maxSpeed = doc["max_pwm_movement"] 
+	// weight = doc["parameter_motor"] | NULL;
+	// maxDistanceFw = doc["max_distance_move"] | NULL;
+	// minDistanceFw = doc["min_distance_move"] | NULL;
+
+	// Serial.println("[handleCommand] - weight: " + String(weight));
+	// Serial.println("[handleCommand] - maxSpeed: " + String(maxSpeed));
 }
 
-void MainProcess::processingDevice(int weights) {
-	maxSpeed = 255;
-
+void MainProcess::processingDevice(int weight, int maxSpeed) {
+	// Serial.println("[Device processing] - maxSpeed: " + String(maxSpeed));
+	// Serial.println("[Device processing] - weight: " + String(weight));
 	//Moving motor processing
 	if (Info.Motor1_mode == 1) {
 		// Serial.println("[Device processing] - go_forward");
 		liftBox();
-		digitalWrite(motor1Revesal, LOW);
+		digitalWrite(motor11Revesal, LOW);
+		digitalWrite(motor12Revesal, LOW);
 
 		motor1Speed = detectTarget(maxSpeed, Info.distanceFW);
 		if (motor1Speed < 30){
@@ -239,20 +275,20 @@ void MainProcess::processingDevice(int weights) {
 		}
 		else{
 			if (motor1Speed > Info.PWM_MT_1)
-				Info.PWM_MT_1 += weights;
+				Info.PWM_MT_1 += weight;
 			else if (motor1Speed < Info.PWM_MT_1)
-				Info.PWM_MT_1 -= weights*10;
+				Info.PWM_MT_1 -= weight*10;
 		}
-
-
 		//_result_PWM 
-		analogWrite(motor1PWM, Info.PWM_MT_1);
+		analogWrite(motor11PWM, Info.PWM_MT_1);
+		analogWrite(motor12PWM, Info.PWM_MT_1);
 		Serial.println("[Device processing] - Motor 1 speed: " + String(Info.PWM_MT_1));
 	} 
 	else if (Info.Motor1_mode == 2) {
 		// Serial.println("[Device processing] - go_backward");
 		liftBox();
-		digitalWrite(motor1Revesal, HIGH);
+		digitalWrite(motor11Revesal, HIGH);
+		digitalWrite(motor12Revesal, HIGH);
 
 		motor1Speed = detectTarget(maxSpeed, Info.distanceBW);
 
@@ -261,20 +297,22 @@ void MainProcess::processingDevice(int weights) {
 		}
 		else{
 			if (motor1Speed > Info.PWM_MT_1)
-				Info.PWM_MT_1 += weights;
+				Info.PWM_MT_1 += weight;
 			else if (motor1Speed < Info.PWM_MT_1)
-				Info.PWM_MT_1 -= weights*10;
+				Info.PWM_MT_1 -= weight*10;
 		}
-
 		//_result_PWM 
-		analogWrite(motor1PWM, Info.PWM_MT_1);
+		analogWrite(motor11PWM, Info.PWM_MT_1);
+		analogWrite(motor12PWM, Info.PWM_MT_1);
 		Serial.println("[Device processing] - Motor 1 speed  : " + String(Info.PWM_MT_1));
 	} 
 	else {
 		Serial.println("[Device processing] - stop motor 1");
-		digitalWrite(motor1Revesal, LOW);
-		if(Info.PWM_MT_1 > 0)	Info.PWM_MT_1 -= weights;
-		analogWrite(motor1PWM, Info.PWM_MT_1);
+		digitalWrite(motor11Revesal, LOW);
+		digitalWrite(motor12Revesal, LOW);
+		if(Info.PWM_MT_1 > 0)	Info.PWM_MT_1 -= weight;
+		analogWrite(motor11PWM, Info.PWM_MT_1);
+		analogWrite(motor12PWM, Info.PWM_MT_1);
 	}
 
 	// Up-Down Motor processing
@@ -291,12 +329,12 @@ void MainProcess::processingDevice(int weights) {
 				Info.Motor2_mode = 0;
 			}
 			else
-				Info.PWM_MT_2 -= (weights * 5);
+				Info.PWM_MT_2 -= (weight * 5);
 		} 
 		else {
 			motor2Speed = (Info.distanceUD / 150) * 255;
 			if (motor2Speed > Info.PWM_MT_2) {
-				Info.PWM_MT_2 += weights;
+				Info.PWM_MT_2 += weight;
 			}
 		}
 		//_result_PWM 
@@ -317,10 +355,10 @@ void MainProcess::processingDevice(int weights) {
 			motor2Speed = (Info.distanceUD / 150) * 255;
 
 			if (motor2Speed > Info.PWM_MT_2) {
-				Info.PWM_MT_2 += weights;
+				Info.PWM_MT_2 += weight;
 			}
 			else 
-				Info.PWM_MT_2 -= weights;
+				Info.PWM_MT_2 -= weight;
 		}
 		//_result_PWM 
 		analogWrite(motor2PWM, Info.PWM_MT_2);
@@ -329,7 +367,7 @@ void MainProcess::processingDevice(int weights) {
 	else {
 		Serial.println("[Device processing] - stop motor 2");
 		digitalWrite(motor2Revesal, LOW);
-		if (Info.PWM_MT_2 > 0)	Info.PWM_MT_2 -= weights;
+		if (Info.PWM_MT_2 > 0)	Info.PWM_MT_2 -= weight;
 		analogWrite(motor2PWM, Info.PWM_MT_2);
 	}
 }
@@ -342,9 +380,9 @@ void MainProcess::liftBox() {
 
 void MainProcess::readDistance() {
 	for (;;) {
-		Info.distanceFW = distance(forwardSensor, modelSensor1);
-		Info.distanceBW = distance(backwardSensor, modelSensor1);
-		Info.distanceUD = distance(updownSensor, modelSensor1);
+		Info.distanceFW = distance(forwardSensor, model1);
+		Info.distanceBW = distance(backwardSensor, model1);
+		Info.distanceUD = distance(updownSensor, model2);
 
 		JsonDocument doc;
 		doc["forward_distance"] = Info.distanceFW;
@@ -395,11 +433,13 @@ void MainProcess::stopMT1(){
 		
 		while (Info.PWM_MT_1 > 0) {
 			Info.PWM_MT_1--;
-			analogWrite(motor1PWM, Info.PWM_MT_1);
+			analogWrite(motor11PWM, Info.PWM_MT_1);
+			analogWrite(motor12PWM, Info.PWM_MT_1);
 			vTaskDelay(pdMS_TO_TICKS(1));
 		}
 		Info.Motor1_mode = 0;
-		digitalWrite(motor1Revesal, LOW);
+		digitalWrite(motor11Revesal, LOW);
+		digitalWrite(motor12Revesal, LOW);
 	}
 }
 void MainProcess::serialEvent(void){
@@ -418,8 +458,8 @@ void MainProcess::serialEvent(void){
 }
 
 float MainProcess::detectTarget(float maxSpeed,float distance){
-	if (distance > 60) target = maxSpeed;
-	else if (distance < 60 && distance > 30) target = (distance*maxSpeed)/60;
+	if (distance > maxDistanceFw) target = maxSpeed;
+	else if (distance < maxDistanceFw && distance > minDistanceFw) target = (distance*maxSpeed)/60;
 	else target = 0;
 	return target; 
 }
