@@ -73,7 +73,7 @@ void MainProcess::processingDeviceTask(void* pvParameters) {
     MainProcess* self = static_cast<MainProcess*>(pvParameters);
     
     for (;;) {
-		self->processingDevice(self->weight, self->maxSpeed); 
+		self->processingDevice(Info.motorParam, Info.maxSpeedMovement); 
         vTaskDelay(pdMS_TO_TICKS(300));  
     }
 }
@@ -237,31 +237,21 @@ void MainProcess::handleData(String& data) {
 	}
 
 	if(doc["max_pwm_movement"] != NULL) {
-		maxSpeed = doc["max_pwm_movement"];
+		Info.maxSpeedMovement = doc["max_pwm_movement"];
 	}
 	if (doc["parameter_motor"] != NULL) {
-		weight = doc["parameter_motor"];
+		Info.motorParam = doc["parameter_motor"];
 	}
 	if (doc["max_distance_move"] != NULL) {
-		maxDistanceFw = doc["max_distance_move"];
+		Info.maxDistanceFw = doc["max_distance_move"];
 
 	}
 	if (doc["min_distance_move"] != NULL) {
-		minDistanceFw = doc["min_distance_move"];
+		Info.minDistanceFw = doc["min_distance_move"];
 	}
-
-	// maxSpeed = doc["max_pwm_movement"] 
-	// weight = doc["parameter_motor"] | NULL;
-	// maxDistanceFw = doc["max_distance_move"] | NULL;
-	// minDistanceFw = doc["min_distance_move"] | NULL;
-
-	// Serial.println("[handleCommand] - weight: " + String(weight));
-	// Serial.println("[handleCommand] - maxSpeed: " + String(maxSpeed));
 }
 
 void MainProcess::processingDevice(int weight, int maxSpeed) {
-	// Serial.println("[Device processing] - maxSpeed: " + String(maxSpeed));
-	// Serial.println("[Device processing] - weight: " + String(weight));
 	//Moving motor processing
 	if (Info.Motor1_mode == 1) {
 		// Serial.println("[Device processing] - go_forward");
@@ -308,8 +298,6 @@ void MainProcess::processingDevice(int weight, int maxSpeed) {
 	} 
 	else {
 		Serial.println("[Device processing] - stop motor 1");
-		digitalWrite(motor11Revesal, LOW);
-		digitalWrite(motor12Revesal, LOW);
 		if(Info.PWM_MT_1 > 0)	Info.PWM_MT_1 -= weight;
 		analogWrite(motor11PWM, Info.PWM_MT_1);
 		analogWrite(motor12PWM, Info.PWM_MT_1);
@@ -322,7 +310,7 @@ void MainProcess::processingDevice(int weight, int maxSpeed) {
 		
 		digitalWrite(motor2Revesal, HIGH);
 
-		if (Info.distanceUD < 20) {
+		if (Info.distanceUD < Info.minDistanceLift) {
 			motor2Speed = 0;
 			if (Info.PWM_MT_2 < 20) {
 				Info.PWM_MT_2 = 0;
@@ -346,7 +334,7 @@ void MainProcess::processingDevice(int weight, int maxSpeed) {
 		stopMT1();
 
 		digitalWrite(motor2Revesal, LOW);
-		if (Info.distanceUD > 150){
+		if (Info.distanceUD > Info.maxDistanceLift) {
 			motor2Speed = 0;
 			Info.Motor2_mode = 0;
 			Info.PWM_MT_2 = 0;
@@ -366,15 +354,28 @@ void MainProcess::processingDevice(int weight, int maxSpeed) {
 	} 
 	else {
 		Serial.println("[Device processing] - stop motor 2");
-		digitalWrite(motor2Revesal, LOW);
 		if (Info.PWM_MT_2 > 0)	Info.PWM_MT_2 -= weight;
 		analogWrite(motor2PWM, Info.PWM_MT_2);
 	}
 }
 void MainProcess::liftBox() {
-	if(Info.distanceUD > 20) {
+	if(Info.distanceUD > Info.minDistanceLift) {
 		Serial.println("[Device processing] - Lifting box before moving.");
 		Info.Motor2_mode = 1;
+	}
+}
+
+void MainProcess::stopMT1(){
+	if (Info.Motor1_mode != 0) {
+		Serial.println("[handleCommand] - Stopping motor 1 before lifting");
+		
+		while (Info.PWM_MT_1 > 0) {
+			Info.PWM_MT_1--;
+			analogWrite(motor11PWM, Info.PWM_MT_1);
+			analogWrite(motor12PWM, Info.PWM_MT_1);
+			vTaskDelay(pdMS_TO_TICKS(1));
+		}
+		Info.Motor1_mode = 0;
 	}
 }
 
@@ -426,22 +427,6 @@ void MainProcess::handleGetData(){
 		xQueueSend(sendMessageQueue, &message, pdMS_TO_TICKS(10));
 	}
 }
-
-void MainProcess::stopMT1(){
-	if (Info.Motor1_mode != 0) {
-		Serial.println("[handleCommand] - Stopping motor 1 before lifting");
-		
-		while (Info.PWM_MT_1 > 0) {
-			Info.PWM_MT_1--;
-			analogWrite(motor11PWM, Info.PWM_MT_1);
-			analogWrite(motor12PWM, Info.PWM_MT_1);
-			vTaskDelay(pdMS_TO_TICKS(1));
-		}
-		Info.Motor1_mode = 0;
-		digitalWrite(motor11Revesal, LOW);
-		digitalWrite(motor12Revesal, LOW);
-	}
-}
 void MainProcess::serialEvent(void){
 	if (Serial.available()) {
 		inComingMessage = Serial.readStringUntil('\n');
@@ -457,9 +442,9 @@ void MainProcess::serialEvent(void){
 	}
 }
 
-float MainProcess::detectTarget(float maxSpeed,float distance){
-	if (distance > maxDistanceFw) target = maxSpeed;
-	else if (distance < maxDistanceFw && distance > minDistanceFw) target = (distance*maxSpeed)/60;
+float MainProcess::detectTarget(float maxSpeed, float distance){
+	if (distance > Info.maxDistanceFw) target = maxSpeed;
+	else if (distance < Info.maxDistanceFw && distance > Info.minDistanceFw) target = (distance*maxSpeed)/60;
 	else target = 0;
 	return target; 
 }

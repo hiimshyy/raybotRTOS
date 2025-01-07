@@ -28,6 +28,12 @@ struct Robot_info {
 	int Motor2_mode = 0;
 	int PWM_MT_1;
 	int PWM_MT_2;
+    int maxSpeedMovement = 255;
+    int motorParam = 5;
+    int maxDistanceFw = 80;
+    int minDistanceFw = 30;
+    int minDistanceLift = 20;
+    int maxDistanceLift = 150;
 	float weight;
 	float battery;
 	float distanceFW;
@@ -64,7 +70,7 @@ class MainProcess {
         void handleData(String& data);
         void handleGetData();
         void readDistance();
-        float detectTarget(float maxSpeed, float distance);
+        float detectTarget(float maxSpeed = 255, float distance = 20);
 
         QueueHandle_t sendMessageQueue;
         QueueHandle_t reciveMessageQueue;
@@ -75,10 +81,6 @@ class MainProcess {
         TaskHandle_t processingDeviceTaskHandle = NULL;
         TaskHandle_t handleMessageTaskHandle = NULL;
         TaskHandle_t readDistanceTaskHandle = NULL;
-
-        uint8_t motor1Stage = 0, motor2Stage = 0;
-        int weight = 5, maxSpeed = 150;
-        int maxDistanceFw = 60, minDistanceFw = 30;
 
 };
 
