@@ -1,56 +1,26 @@
+// Robot info
+int Motor1_mode = 0; // 0 - stop, 1 - forward, 2 - backward
+int Motor2_mode = 0; // 0 - stop, 1 - up, 2 - down
+int PWM_MT_1 = 0; // motor 1 PWM
+int PWM_MT_2 = 0; // motor 2 PWM
+int maxSpeedMovement = 150; // max speed of motor 1
+int maxSpeedLift = 150; // max speed of motor 2
+int motorParam = 5; // motor param
+int maxDistanceMove = 20; // max distance of motor 1
+int minDistanceMove = 10; // min distance of motor 1
+int minDistanceLift = 20; // min distance of motor 2
+int maxDistanceLift = 40; // max distance of motor 2
+float weight = 0; // weight of robot
+float battery = 0; // battery level of robot
+float distanceFW = 0; // distance from forward sensor
+float distanceBW = 0; // distance from backward sensor
+float distanceUD = 0; // distance from up-down sensor
+bool safety = false; // safety flag
+bool door_state = false; // door state flag
+bool taskActive = false; // task active flag
+String command = ""; // command from user
 
-#define SAMPLES 25
-#define ir A0
-#define modelSensor 1080
+// example of message recived form serial
+// TYPE 1: CMD:forward,CMD:backward,CMD:stop,CMD:lift_box,CMD:drop_box,CMD:clr
+// TYPE 2: DATA:{"max_pwm_movement":255,"max_pwm_lift":255, "parameter_motor":5, "max_distance_move":20, "min_distance_move":10, "min_distance_lift":20, "max_distance_lift":40}
 
-
-void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(9600);
-}
-
-void loop() {
-  float ir_val[SAMPLES] = {};
-	int distanceCM;
-	int median;
-
-	for (int i=0; i<SAMPLES; i++){
-		ir_val[i] = analogRead(ir);
-	}
-
-	sort(ir_val, SAMPLES);
-	median = ir_val[SAMPLES/2];
-	Serial.println("Median: " + String(median));
-
-	if (modelSensor == 1080) 
-		if (median > 1000) distanceCM = 0;
-		else if (median < 1000 && median > 150)
-			distanceCM = 29.988 * pow(map(median, 0, 1023, 0, 5000)/1000.0, -1.173);
-		else 
-			distanceCM = 80;
-	else if (modelSensor == 20150)
-		if (median > 1000 ) distanceCM = 0; 
-		else if (median < 1000 && median > 150)
-			distanceCM = 60.374 * pow(map(median, 0, 1023, 0, 5000)/1000.0, -1.16);
-		else 
-			distanceCM = 150;
-	else 
-		distanceCM = 0; 
-  Serial.println("Distance: " + String(distanceCM));
-  delay(100);
-}
-
-void sort(float a[], int size) {
-	for(int i = 0; i < size-1; i++) {
-		bool swapped = false;
-		for(int j = 0; j < size-i-1; j++) {
-			if(a[j] > a[j+1]) {
-				float temp = a[j];
-				a[j] = a[j+1];
-				a[j+1] = temp;
-				swapped = true;
-			}
-		}
-		if (!swapped) break;
-	}
-}

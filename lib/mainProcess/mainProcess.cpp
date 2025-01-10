@@ -6,7 +6,6 @@ SimpleKalmanFilter filter(2, 2, 0.01);
 void MainProcess::begin()
 {
 	init();
-	sendMessageQueue = xQueueCreate(100, sizeof(String));
 	Serial.println("[MainProcess] - Begin");
 
 	xTaskCreate(
@@ -73,7 +72,7 @@ void MainProcess::processingDeviceTask(void *pvParameters)
 
 	for (;;)
 	{
-		self->processingDevice(Info.motorParam);
+		self->processingDevice();
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
@@ -112,8 +111,8 @@ void MainProcess::init()
 	Serial2.begin(115200);
 	Serial.println("[MainProcess] - Init");
 
-	const int inputPins[] = {forwardSensor, backwardSensor, updownSensor};
-	const int outputPins[] = {motor11Revesal, motor12Revesal, motor2Revesal, motor11PWM, motor12PWM, motor2PWM};
+	const int inputPins[] = {SENSOR_FORWARD, SENSOR_BACKWARD, SENSOR_UPDOWN};
+	const int outputPins[] = {MOTOR1_REV1, MOTOR1_REV2, MOTOR2_REV, MOTOR1_PWM1, MOTOR1_PWM2, MOTOR2_PWM};
 
 	for (int pin : inputPins)
 		pinMode(pin, INPUT);
@@ -122,6 +121,8 @@ void MainProcess::init()
 		pinMode(pin, OUTPUT);
 		analogWrite(pin, 0);
 	}
+
+	sendMessageQueue = xQueueCreate(100, sizeof(String));
 }
 
 void MainProcess::handleMessage()
@@ -130,127 +131,55 @@ void MainProcess::handleMessage()
 	{
 		Info.command = isCommingMsg.substring(4);
 		Serial.println("DATA:{command:" + Info.command + "}");
-		// handleCommand(Info.command);
 	}
 	else if (isCommingMsg.startsWith("DATA:"))
 	{
 		handleData(isCommingMsg);
-		isCommingMsg = "";
+		isCommingMsg.remove(0);
 	}
 }
 
-void MainProcess::handleCommand(String cmd)
+void MainProcess::handleCommand(const String& cmd)
 {	
 	// CMD:forward, CMD:backward, CMD:stop, CMD:lift_box, CMD:drop_box, CMD:clr
-	if (cmd == "forward")
+	if (cmd == "forward" || cmd == "backward")
 	{
-		// Serial.println("[handleCommand] - go_forward");
-		if (Info.Motor1_mode != 1)
+		// Serial.println("[handleCommand] - " + cmd);
+		uint8_t newMode = (cmd == "forward") ? 1 : 2;
+		if( Info.Motor1_mode != newMode)
 		{
-			while (true)
-			{
-				if (Info.PWM_MT_1 > 10)
-				{
-					Info.PWM_MT_1 -= 5;
-					analogWrite(motor11PWM, Info.PWM_MT_1);
-					analogWrite(motor12PWM, Info.PWM_MT_1);
-					vTaskDelay(pdMS_TO_TICKS(10));
-				}
-				else
-				{
-					Info.PWM_MT_1 = 0;
-					Info.Motor1_mode = 1;
-					break;
-				}
-			}
+			gradualStop(MOTOR1);
+			Info.Motor1_mode = newMode;
 		}
+		return;
 	}
-	else if (cmd == "backward")
+
+	if (cmd == "lift_box" || cmd == "drop_box")
 	{
-		// Serial.println("[handelCommand] - go_backward");
-		if (Info.Motor1_mode != 2)
+		uint8_t newMode = (cmd == "lift_box") ? 1 : 2;
+		if(Info.Motor2_mode != newMode)
 		{
-			while (true)
-			{
-				if (Info.PWM_MT_1 > 10)
-				{
-					Info.PWM_MT_1 -= 5;
-					analogWrite(motor11PWM, Info.PWM_MT_1);
-					analogWrite(motor12PWM, Info.PWM_MT_1);
-					vTaskDelay(pdMS_TO_TICKS(10));
-				}
-				else
-				{
-					Info.PWM_MT_1 = 0;
-					Info.Motor1_mode = 2;
-					break;
-				}
-			}
+			gradualStop(MOTOR2);
+			Info.Motor2_mode = newMode;
 		}
+		return;
 	}
-	else if (cmd == "stop")
+
+	if (cmd == "stop")
 	{
 		// Serial.println("[handelCommand] - stop");
 		Info.Motor1_mode = 0;
 		Info.Motor2_mode = 0;
 	}
-	else if (cmd == "lift_box")
-	{
-		// Serial.println("[handleCommand] - up");
-		stopMT1();
-		if (Info.Motor2_mode == 0)
-			Info.Motor2_mode = 1;
-
-		if (Info.Motor2_mode != 1)
-		{
-			while (1)
-			{
-				if (Info.PWM_MT_2 > 30)
-				{
-					Info.PWM_MT_2--;
-					analogWrite(motor2PWM, Info.PWM_MT_2);
-					vTaskDelay(pdMS_TO_TICKS(10));
-				}
-				else
-				{
-					Info.PWM_MT_2 = 0;
-					Info.Motor2_mode = 1;
-					break;
-				}
-			}
-		}
-	}
-	else if (cmd == "drop_box")
-	{
-		// Serial.println("[handleCommand] - down");
-		stopMT1();
-		if (Info.Motor2_mode != 2)
-		{
-			while (1)
-			{
-				if (Info.PWM_MT_2 > 30)
-				{
-					Info.PWM_MT_2--;
-					analogWrite(motor2PWM, Info.PWM_MT_2);
-					vTaskDelay(pdMS_TO_TICKS(10));
-				}
-				else
-				{
-					Info.PWM_MT_2 = 0;
-					Info.Motor2_mode = 2;
-					break;
-				}
-			}
-		}
-	}
-	else if (cmd == "clr")
+	
+	if (cmd == "clr")
 	{
 		// Serial.println("[handleCommand] - clear");
 		Info.Motor1_mode = 0;
 		Info.Motor2_mode = 0;
 		Info.taskActive = false;
-		isCommingMsg = "";
-		inComingMessage = "";
+		isCommingMsg.remove(0);
+		inComingMessage.remove(0);
 		return;
 	}
 	else
@@ -259,11 +188,11 @@ void MainProcess::handleCommand(String cmd)
 	}
 }
 
-void MainProcess::handleData(String data)
+void MainProcess::handleData(const String& data)
 {
 	String dataStr = data.substring(5);
-	// Serial.println("[handleCommand] - handleData");
-	// DATA:{"weight":10,"movement_pwm":255}
+	// Serial.println("[handleCommand] - handleData");	
+	// DATA:{"max_pwm_movement":255,"max_pwm_lift":255, "parameter_motor":5, "max_distance_move":20, "min_distance_move":10, "min_distance_lift":20, "max_distance_lift":40}
 	JsonDocument doc;
 	DeserializationError error = deserializeJson(doc, dataStr);
 
@@ -293,13 +222,13 @@ void MainProcess::handleData(String data)
 	if (!doc["max_distance_move"].isNull())
 
 	{
-		Info.maxDistanceFw = doc["max_distance_move"].as<float>(); 
-		Serial.println("DATA:{max_distance_move:" + String(Info.maxDistanceFw)+ "}");
+		Info.maxDistanceMove = doc["max_distance_move"].as<float>(); 
+		Serial.println("DATA:{max_distance_move:" + String(Info.maxDistanceMove)+ "}");
 	}
 	if (!doc["min_distance_move"].isNull())
 	{
-		Info.minDistanceFw = doc["min_distance_move"].as<float>(); 
-		Serial.println("DATA:{min_distance_move:" + String(Info.minDistanceFw)+ "}");
+		Info.minDistanceMove = doc["min_distance_move"].as<float>(); 
+		Serial.println("DATA:{min_distance_move:" + String(Info.minDistanceMove)+ "}");
 	}
 	if (!doc["min_distance_lift"].isNull())
 	{
@@ -314,138 +243,10 @@ void MainProcess::handleData(String data)
 
 }
 
-void MainProcess::processingDevice(int weight)
+void MainProcess::processingDevice()
 {
-	// Moving motor processing
-	if (Info.Motor1_mode == 1)
-	{
-		// Serial.println("[Device processing] - go_forward");
-		liftBox();
-		digitalWrite(motor11Revesal, LOW);
-		digitalWrite(motor12Revesal, LOW);
-
-		motor1Speed = detectTarget(Info.maxSpeedMovement, Info.distanceFW);
-		if (motor1Speed < 30)
-		{
-			Info.PWM_MT_1 = 0;
-		}
-		else
-		{
-			if (motor1Speed > Info.PWM_MT_1)
-				Info.PWM_MT_1 += weight;
-			else if (motor1Speed < Info.PWM_MT_1)
-				Info.PWM_MT_1 -= weight * 10;
-		}
-		//_result_PWM
-		analogWrite(motor11PWM, Info.PWM_MT_1);
-		analogWrite(motor12PWM, Info.PWM_MT_1);
-		Serial.println("[Device processing] - Motor 1 speed: " + String(Info.PWM_MT_1));
-	}
-	else if (Info.Motor1_mode == 2)
-	{
-		// Serial.println("[Device processing] - go_backward");
-		liftBox();
-		digitalWrite(motor11Revesal, HIGH);
-		digitalWrite(motor12Revesal, HIGH);
-
-		motor1Speed = detectTarget(Info.maxSpeedMovement, Info.distanceBW);
-
-		if (motor1Speed < 30)
-		{
-			Info.PWM_MT_1 = 0;
-		}
-		else
-		{
-			if (motor1Speed > Info.PWM_MT_1)
-				Info.PWM_MT_1 += weight;
-			else if (motor1Speed < Info.PWM_MT_1)
-				Info.PWM_MT_1 -= weight * 10;
-		}
-		//_result_PWM
-		analogWrite(motor11PWM, Info.PWM_MT_1);
-		analogWrite(motor12PWM, Info.PWM_MT_1);
-		Serial.println("[Device processing] - Motor 1 speed  : " + String(Info.PWM_MT_1));
-	}
-	else
-	{
-		Serial.println("[Device processing] - stop motor 1");
-		if (Info.PWM_MT_1 > 30)
-			Info.PWM_MT_1 -= weight*10;
-		else
-			Info.PWM_MT_1 = 0;
-		analogWrite(motor11PWM, Info.PWM_MT_1);
-		analogWrite(motor12PWM, Info.PWM_MT_1);
-	}
-
-	// Up-Down Motor processing
-	if (Info.Motor2_mode == 1)
-	{
-		Serial.println("[Device processing] - up");
-		stopMT1();
-
-		digitalWrite(motor2Revesal, LOW);
-
-		if (Info.distanceUD < 20)
-		{
-			motor2Speed = 0;
-			if (Info.PWM_MT_2 < 20)
-			{
-				Info.PWM_MT_2 = 0;
-				Info.Motor2_mode = 0;
-			}
-			else
-				Info.PWM_MT_2 -= (weight * 5);
-		}
-		else
-		{
-			motor2Speed = detectTarget(Info.maxSpeedLift, Info.distanceUD, false);
-			if (motor2Speed > Info.PWM_MT_2)
-			{
-				Info.PWM_MT_2 += weight;
-			}
-			else 
-				Info.PWM_MT_2 -= weight;
-		}
-		//_result_PWM
-		analogWrite(motor2PWM, Info.PWM_MT_2);
-		Serial.println("[Device processing] - Motor 2 speed  : " + String(Info.PWM_MT_2));
-	}
-	else if (Info.Motor2_mode == 2)
-	{
-		Serial.println("[Device processing] - down");
-		stopMT1();
-
-		digitalWrite(motor2Revesal, HIGH);
-		if (Info.distanceUD > 50)
-		{
-			motor2Speed = 0;
-			Info.Motor2_mode = 0;
-			Info.PWM_MT_2 = 0;
-		}
-		else
-		{
-			motor2Speed = detectTarget(Info.maxSpeedLift, Info.distanceUD, false);
-
-			if (motor2Speed > Info.PWM_MT_2)
-			{
-				Info.PWM_MT_2 += weight;
-			}
-			else
-				Info.PWM_MT_2 -= weight;
-		}
-		//_result_PWM
-		analogWrite(motor2PWM, Info.PWM_MT_2);
-		Serial.println("[Device processing] - Motor 2 speed: " + String(Info.PWM_MT_2));
-	}
-	else
-	{
-		Serial.println("[Device processing] - stop motor 2");
-		if (Info.PWM_MT_2 > 20)
-			Info.PWM_MT_2 -= weight;
-		else
-			Info.PWM_MT_2 = 0;
-		analogWrite(motor2PWM, Info.PWM_MT_2);
-	}
+	motor1Control();
+	motor2Control();
 }
 void MainProcess::liftBox()
 {
@@ -460,30 +261,135 @@ void MainProcess::stopMT1()
 {
 	if (Info.Motor1_mode != 0)
 	{
-		Serial.println("[handleCommand] - Stopping motor 1 before lifting");
+		Serial.println("[Device processing] - Stopping motor 1 before lifting");
 
 		while (Info.PWM_MT_1 > 0)
 		{
 			Info.PWM_MT_1 -= 30;
-			analogWrite(motor11PWM, Info.PWM_MT_1);
-			analogWrite(motor12PWM, Info.PWM_MT_1);
+			analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
+			analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
 			vTaskDelay(pdMS_TO_TICKS(1));
 		}
 		Info.Motor1_mode = 0;
 	}
 }
 
-float MainProcess::detectTarget(int maxSpeed, float distance, bool modelSensor)
+void MainProcess::gradualStop(int motor){
+	if(motor == 1){
+		while(Info.PWM_MT_1 > 0){
+			Info.PWM_MT_1 -= Info.motorParam;
+			analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
+			analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
+			vTaskDelay(pdMS_TO_TICKS(10));
+		}
+	}
+	else if(motor == 2){
+		while(Info.PWM_MT_2 > 0){
+			Info.PWM_MT_2 -= Info.motorParam;
+			analogWrite(MOTOR2_PWM, Info.PWM_MT_2);
+			vTaskDelay(pdMS_TO_TICKS(10));
+		}
+	}
+}
+
+void MainProcess::motor1Control(){
+	if (Info.Motor1_mode == 1 || Info.Motor1_mode == 2){
+		liftBox();
+
+		bool isForward = (Info.Motor1_mode == 1);
+		motorDriection(MOTOR1, isForward);
+
+		float currentDistance = isForward ? Info.distanceFW : Info.distanceBW;
+		motor1Speed = detectTarget(1, Info.maxSpeedMovement, currentDistance);
+
+		updateSpeed(MOTOR1, motor1Speed, false);
+
+		analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
+		analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
+		Serial.println("[Device processing] - Motor 1 speed: " + String(Info.PWM_MT_1));
+	}
+	else 
+	{
+		Serial.println("[Device processing] - stop motor 1");
+		updateSpeed(MOTOR1, 0, true);
+		analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
+		analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
+	}
+}
+
+void MainProcess::motor2Control(){
+	if (Info.Motor2_mode == 1 || Info.Motor2_mode == 2){
+		stopMT1();
+
+		bool isUp = (Info.Motor2_mode == 1);
+		motorDriection(MOTOR2, isUp);
+
+		if (Info.distanceUD < Info.minDistanceLift)
+		{
+			motor2Speed = 0;
+			Info.Motor2_mode = 0;
+			Info.PWM_MT_2 = 0;
+		}
+		else
+		{
+			motor2Speed = detectTarget(2, Info.maxSpeedLift, Info.distanceUD);
+			updateSpeed(MOTOR2, motor2Speed, false);
+		}
+		analogWrite(MOTOR2_PWM, Info.PWM_MT_2);
+		Serial.println("[Device processing] - Motor 2 speed: " + String(Info.PWM_MT_2));
+	}
+	else 
+	{
+		Serial.println("[Device processing] - stop motor 2");
+		updateSpeed(MOTOR2, 0, true);
+		analogWrite(MOTOR2_PWM, Info.PWM_MT_2);
+	}
+
+}
+
+void MainProcess::updateSpeed(int motor,float target, bool isStop){
+	if (motor == 1){
+		if (isStop || target < MIN_PWM)
+			Info.PWM_MT_1 = (Info.PWM_MT_1 > 0) ? Info.PWM_MT_1 - Info.motorParam*10 : 0;
+		else
+			if (target > Info.PWM_MT_1)
+				Info.PWM_MT_1 += Info.motorParam;
+			else 
+				Info.PWM_MT_1 -= Info.motorParam;	
+	}
+	else if (motor == 2){
+		if (isStop || target < MIN_PWM)
+			Info.PWM_MT_2 = (Info.PWM_MT_2 > 0) ? Info.PWM_MT_2 - Info.motorParam*10 : 0;
+		else
+			if (target > Info.PWM_MT_2)
+				Info.PWM_MT_2 += Info.motorParam;
+			else 
+				Info.PWM_MT_2 -= Info.motorParam;	
+	}
+
+}
+
+void MainProcess::motorDriection(int motor, bool direction){
+	if (motor == 1){
+		digitalWrite(MOTOR1_REV1, direction ? LOW : HIGH);
+		digitalWrite(MOTOR1_REV2, direction ? LOW : HIGH);
+	}
+	else if (motor == 2){
+		digitalWrite(MOTOR2_REV, direction ? LOW : HIGH);
+	}
+}
+
+float MainProcess::detectTarget(int motor, int maxSpeed, float distance)
 {
-	if(modelSensor == true){
-		if (distance > Info.maxDistanceFw)
+	if(motor == 1){
+		if (distance > Info.maxDistanceMove)
 			target = maxSpeed;
-		else if (distance < Info.maxDistanceFw && distance > Info.minDistanceFw)
-			target = (distance * maxSpeed) / Info.maxDistanceFw;
+		else if (distance < Info.maxDistanceMove && distance > Info.minDistanceMove)
+			target = (distance * maxSpeed) / Info.maxDistanceMove;
 		else
 			target = 0;
 	}
-	else
+	else if (motor == 2)
 		if (distance > Info.maxDistanceLift)
 			target = maxSpeed;
 		else if (distance < Info.maxDistanceLift && distance > Info.minDistanceLift)
@@ -497,9 +403,9 @@ void MainProcess::readDistance()
 {
 	for (;;)
 	{
-		Info.distanceFW = filter.updateEstimate(distance(forwardSensor, model1));
-		Info.distanceBW = filter.updateEstimate(distance(backwardSensor, model1));
-		Info.distanceUD = filter.updateEstimate(distance(updownSensor, model2));
+		Info.distanceFW = filter.updateEstimate(distance(SENSOR_FORWARD, MODEL_1080));
+		Info.distanceBW = filter.updateEstimate(distance(SENSOR_BACKWARD, MODEL_1080));
+		Info.distanceUD = filter.updateEstimate(distance(SENSOR_UPDOWN, MODEL_20150));
 
 		// JsonDocument doc;
 		// // doc["forward_distance"] = int(Info.distanceFW);
@@ -593,7 +499,7 @@ void MainProcess::handleGetData()
 	jsonDoc["forward_distance"] = Info.distanceFW;
 	jsonDoc["backward_distance"] = Info.distanceBW;
 	jsonDoc["lift_distance"] = Info.distanceUD;
-	jsonDoc["weight"] = Info.weight;
+	jsonDoc["Info.motorParam"] = Info.weight;
 	jsonDoc["battery"] = Info.battery;
 	jsonDoc["movement_motor"] = Info.Motor1_mode;
 	jsonDoc["movement_pwm"] = Info.PWM_MT_1;
