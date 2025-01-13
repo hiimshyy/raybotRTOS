@@ -85,7 +85,7 @@ private:
     void motor2Control();
     void motorDriection(int motor, bool direction);
     void updateSpeed(int motor, float target, bool isStop = false);
-    float detectTarget(int motor, int maxSpeed, float distance);
+    float detectTarget(int motor, int maxSpeed, float distance, bool isLifting = false);
 
     QueueHandle_t sendMessageQueue;
     QueueHandle_t reciveMessageQueue;
@@ -103,4 +103,4 @@ private:
     TaskHandle_t readDistanceTaskHandle = NULL;
 };
 
-#endif
+#endif // __MAIN_PROCESSING_H

@@ -1,7 +1,9 @@
 #include "mainProcess.h"
 
 Robot_info Info;
-SimpleKalmanFilter filter(2, 2, 0.01);
+SimpleKalmanFilter filter1(1, 1, 0.01);
+SimpleKalmanFilter filter2(1, 1, 0.01);
+SimpleKalmanFilter filter3(1, 1, 0.01);
 
 void MainProcess::begin()
 {
@@ -265,7 +267,7 @@ void MainProcess::stopMT1()
 
 		while (Info.PWM_MT_1 > 0)
 		{
-			Info.PWM_MT_1 -= 30;
+			Info.PWM_MT_1 = (Info.PWM_MT_1 > 0) ? Info.PWM_MT_1 - Info.motorParam : 0;
 			analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
 			analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
 			vTaskDelay(pdMS_TO_TICKS(1));
@@ -277,7 +279,7 @@ void MainProcess::stopMT1()
 void MainProcess::gradualStop(int motor){
 	if(motor == 1){
 		while(Info.PWM_MT_1 > 0){
-			Info.PWM_MT_1 -= Info.motorParam;
+			Info.PWM_MT_1 = (Info.PWM_MT_1 > 0) ? Info.PWM_MT_1 - Info.motorParam : 0;
 			analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
 			analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
 			vTaskDelay(pdMS_TO_TICKS(10));
@@ -285,7 +287,7 @@ void MainProcess::gradualStop(int motor){
 	}
 	else if(motor == 2){
 		while(Info.PWM_MT_2 > 0){
-			Info.PWM_MT_2 -= Info.motorParam;
+			Info.PWM_MT_2 = (Info.PWM_MT_2 > 0) ? Info.PWM_MT_2 - Info.motorParam : 0;
 			analogWrite(MOTOR2_PWM, Info.PWM_MT_2);
 			vTaskDelay(pdMS_TO_TICKS(10));
 		}
@@ -294,19 +296,22 @@ void MainProcess::gradualStop(int motor){
 
 void MainProcess::motor1Control(){
 	if (Info.Motor1_mode == 1 || Info.Motor1_mode == 2){
-		liftBox();
+		if(Info.distanceUD > Info.minDistanceLift)
+			liftBox();
+		else
+		{
+			bool isForward = (Info.Motor1_mode == 1);
+			motorDriection(MOTOR1, isForward);
 
-		bool isForward = (Info.Motor1_mode == 1);
-		motorDriection(MOTOR1, isForward);
+			float currentDistance = isForward ? Info.distanceFW : Info.distanceBW;
+			motor1Speed = detectTarget(1, Info.maxSpeedMovement, currentDistance);
 
-		float currentDistance = isForward ? Info.distanceFW : Info.distanceBW;
-		motor1Speed = detectTarget(1, Info.maxSpeedMovement, currentDistance);
+			updateSpeed(MOTOR1, motor1Speed, false);
 
-		updateSpeed(MOTOR1, motor1Speed, false);
-
-		analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
-		analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
-		Serial.println("[Device processing] - Motor 1 speed: " + String(Info.PWM_MT_1));
+			analogWrite(MOTOR1_PWM1, Info.PWM_MT_1);
+			analogWrite(MOTOR1_PWM2, Info.PWM_MT_1);
+			Serial.println("[Device processing] - Motor 1 speed: " + String(Info.PWM_MT_1));
+		}
 	}
 	else 
 	{
@@ -321,10 +326,10 @@ void MainProcess::motor2Control(){
 	if (Info.Motor2_mode == 1 || Info.Motor2_mode == 2){
 		stopMT1();
 
-		bool isUp = (Info.Motor2_mode == 1);
-		motorDriection(MOTOR2, isUp);
+		bool isLifting = (Info.Motor2_mode == 1);
+		motorDriection(MOTOR2, isLifting);
 
-		if (Info.distanceUD < Info.minDistanceLift)
+		if ((isLifting && Info.distanceUD < Info.minDistanceLift) || (!isLifting && Info.distanceUD > Info.maxDistanceLift))
 		{
 			motor2Speed = 0;
 			Info.Motor2_mode = 0;
@@ -332,7 +337,7 @@ void MainProcess::motor2Control(){
 		}
 		else
 		{
-			motor2Speed = detectTarget(2, Info.maxSpeedLift, Info.distanceUD);
+			motor2Speed = detectTarget(2, Info.maxSpeedLift, Info.distanceUD, isLifting);
 			updateSpeed(MOTOR2, motor2Speed, false);
 		}
 		analogWrite(MOTOR2_PWM, Info.PWM_MT_2);
@@ -354,8 +359,8 @@ void MainProcess::updateSpeed(int motor,float target, bool isStop){
 		else
 			if (target > Info.PWM_MT_1)
 				Info.PWM_MT_1 += Info.motorParam;
-			else 
-				Info.PWM_MT_1 -= Info.motorParam;	
+			else if (target < Info.PWM_MT_1)
+				Info.PWM_MT_1 = (Info.PWM_MT_1 > 0) ? Info.PWM_MT_1 - Info.motorParam : 0;	
 	}
 	else if (motor == 2){
 		if (isStop || target < MIN_PWM)
@@ -363,10 +368,9 @@ void MainProcess::updateSpeed(int motor,float target, bool isStop){
 		else
 			if (target > Info.PWM_MT_2)
 				Info.PWM_MT_2 += Info.motorParam;
-			else 
-				Info.PWM_MT_2 -= Info.motorParam;	
+			else if (target < Info.PWM_MT_2)
+				Info.PWM_MT_2 = (Info.PWM_MT_2 > 0) ? Info.PWM_MT_2 - Info.motorParam : 0;	
 	}
-
 }
 
 void MainProcess::motorDriection(int motor, bool direction){
@@ -379,33 +383,43 @@ void MainProcess::motorDriection(int motor, bool direction){
 	}
 }
 
-float MainProcess::detectTarget(int motor, int maxSpeed, float distance)
+float MainProcess::detectTarget(int motor, int maxSpeed, float distance, bool isLifting)
 {
 	if(motor == 1){
 		if (distance > Info.maxDistanceMove)
 			target = maxSpeed;
 		else if (distance < Info.maxDistanceMove && distance > Info.minDistanceMove)
-			target = (distance * maxSpeed) / Info.maxDistanceMove;
+			target = max(0,(distance * maxSpeed) / Info.maxDistanceMove);
 		else
 			target = 0;
 	}
 	else if (motor == 2)
-		if (distance > Info.maxDistanceLift)
-			target = maxSpeed;
-		else if (distance < Info.maxDistanceLift && distance > Info.minDistanceLift)
-			target = (distance * maxSpeed) / Info.maxDistanceLift;
+	    if(isLifting)
+			if (distance > Info.maxDistanceLift)
+				target = maxSpeed;
+			else if (distance < Info.maxDistanceLift && distance > Info.minDistanceLift)
+				target = max(0,(distance * maxSpeed) / Info.maxDistanceLift);
+			else
+				target = 0;
 		else
-			target = 0;
-	return target;
+			if (distance < Info.minDistanceLift)
+				target = maxSpeed;
+			else if (distance > Info.minDistanceLift && distance < Info.maxDistanceLift)
+				target = max(0,(distance * maxSpeed) / Info.maxDistanceLift);
+			else
+				target = 0;
+	else
+		target = 0;
+	return max(0,target);
 }
 
 void MainProcess::readDistance()
 {
 	for (;;)
 	{
-		Info.distanceFW = filter.updateEstimate(distance(SENSOR_FORWARD, MODEL_1080));
-		Info.distanceBW = filter.updateEstimate(distance(SENSOR_BACKWARD, MODEL_1080));
-		Info.distanceUD = filter.updateEstimate(distance(SENSOR_UPDOWN, MODEL_20150));
+		Info.distanceFW = filter1.updateEstimate(distance(SENSOR_FORWARD, MODEL_1080));
+		Info.distanceBW = filter2.updateEstimate(distance(SENSOR_BACKWARD, MODEL_1080));
+		Info.distanceUD = filter3.updateEstimate(distance(SENSOR_UPDOWN, MODEL_20150));
 
 		// JsonDocument doc;
 		// // doc["forward_distance"] = int(Info.distanceFW);
